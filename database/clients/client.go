@@ -170,6 +170,43 @@ func CreateClientWithName(name string) (clientUUID, token string, err error) {
 	return clientUUID, token, nil
 }
 
+// CreateAutoDiscoveryClient 创建一个自动发现客户端，并记录 Agent 上报的主机名，
+// 供重装/更新后重新注册时复用身份（见 FindAutoDiscoveryClients）。
+func CreateAutoDiscoveryClient(host string) (clientUUID, token string, err error) {
+	db := dbcore.GetDBInstance()
+	token = utils.GenerateToken()
+	clientUUID = uuid.New().String()
+	client := models.Client{
+		UUID:              clientUUID,
+		Token:             token,
+		Name:              "Auto-" + host,
+		AutoDiscoveryHost: host,
+		CreatedAt:         time.Now().UTC(),
+		UpdatedAt:         time.Now().UTC(),
+	}
+
+	err = db.Create(&client).Error
+	if err != nil {
+		return "", "", err
+	}
+	if err := tasks.AddDefaultOnClientUUID(clientUUID); err != nil {
+		logger.ErrorArgs("clients", "Failed to apply default-on ping tasks to new client:", err)
+	}
+	return clientUUID, token, nil
+}
+
+// FindAutoDiscoveryClients 返回可能属于同一主机的自动发现节点：
+// 包含记录过该主机名的节点，以及名称仍为 "Auto-<host>" 的旧节点（升级前创建、尚未改名）。
+func FindAutoDiscoveryClients(host string) ([]models.Client, error) {
+	db := dbcore.GetDBInstance()
+	var list []models.Client
+	err := db.Where("auto_discovery_host = ? OR name = ?", host, "Auto-"+host).Find(&list).Error
+	if err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
 /*
 // GetAllClients 获取所有客户端配置
 

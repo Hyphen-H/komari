@@ -42,6 +42,11 @@ type Client struct {
 	TrafficLimitType string     `json:"traffic_limit_type" gorm:"type:varchar(10);default:'max'"` // 流量阈值类型：sum max min up down
 	CreatedAt        time.Time  `json:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at"`
+
+	// AutoDiscoveryHost 记录自动发现注册时 Agent 上报的主机名（不含 "Auto-" 前缀）。
+	// Agent 重装/更新丢失本地 auto-discovery.json 后会重新注册；凭该字段即可找回
+	// 原节点并复用其身份，避免产生重复节点、并保留管理员自定义的名称与历史数据。
+	AutoDiscoveryHost string `json:"auto_discovery_host,omitempty" gorm:"type:varchar(100);index"`
 }
 
 // User represents an authenticated user

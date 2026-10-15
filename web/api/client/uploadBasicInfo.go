@@ -24,6 +24,8 @@ func saveClientBasicInfo(info map[string]interface{}, uuid string, fallbackIP st
 	info["uuid"] = uuid
 	applyFallbackClientIP(info, fallbackIP)
 	appendClientRegionFromGeoIP(info)
+	// 节点名称由管理员设置，不应被 Agent 上报的数据覆盖。
+	delete(info, "name")
 	return clients.SaveClientInfo(info)
 }
 
