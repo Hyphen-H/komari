@@ -5,8 +5,8 @@ import (
 
 	"github.com/komari-monitor/komari/database/auditlog"
 	"github.com/komari-monitor/komari/database/clients"
-	"github.com/komari-monitor/komari/internal/metricstore"
 	"github.com/komari-monitor/komari/database/records"
+	"github.com/komari-monitor/komari/internal/metricstore"
 	"github.com/komari-monitor/komari/pkg/rpc"
 	agent_runtime "github.com/komari-monitor/komari/web/agent"
 )
@@ -66,6 +66,11 @@ func init() {
 		Summary: "Delete all load records",
 		Returns: "null",
 	})
+	RegisterWithGroupAndMeta("editClientClassifications", rpc.RoleAdmin, adminEditClientClassifications, &rpc.MethodMeta{
+		Name:    "admin:editClientClassifications",
+		Summary: "Atomically update classifications for multiple clients",
+		Returns: "null",
+	})
 }
 
 // auditActor 从上下文提取审计用的 actor UUID 与来源 IP。
@@ -79,7 +84,10 @@ func auditActor(ctx context.Context) (uuid, ip string) {
 
 func adminAddClient(ctx context.Context, req *rpc.JsonRpcRequest) (any, *rpc.JsonRpcError) {
 	var params struct {
-		Name string `json:"name"`
+		Name   string `json:"name"`
+		Group  string `json:"group"`
+		Tags   string `json:"tags"`
+		Region string `json:"region"`
 	}
 	req.BindParams(&params)
 
@@ -87,7 +95,9 @@ func adminAddClient(ctx context.Context, req *rpc.JsonRpcRequest) (any, *rpc.Jso
 		uuid, token string
 		err         error
 	)
-	if params.Name == "" {
+	if params.Group != "" || params.Tags != "" || params.Region != "" {
+		uuid, token, err = clients.CreateClientWithMetadata(params.Name, params.Group, params.Tags, params.Region)
+	} else if params.Name == "" {
 		uuid, token, err = clients.CreateClient()
 	} else {
 		uuid, token, err = clients.CreateClientWithName(params.Name)
@@ -100,6 +110,24 @@ func adminAddClient(ctx context.Context, req *rpc.JsonRpcRequest) (any, *rpc.Jso
 		auditlog.Log(ip, actor, "create client:"+uuid, "info")
 	}
 	return map[string]any{"uuid": uuid, "token": token}, nil
+}
+
+func adminEditClientClassifications(ctx context.Context, req *rpc.JsonRpcRequest) (any, *rpc.JsonRpcError) {
+	var params struct {
+		Updates []map[string]string `json:"updates"`
+	}
+	if err := req.BindParams(&params); err != nil || len(params.Updates) == 0 {
+		return nil, rpc.MakeError(rpc.InvalidParams, "Invalid or empty classification updates", nil)
+	}
+	if len(params.Updates) > 1000 {
+		return nil, rpc.MakeError(rpc.InvalidParams, "Too many classification updates", nil)
+	}
+	if err := clients.SaveClientClassifications(params.Updates); err != nil {
+		return nil, rpc.MakeError(rpc.InternalError, err.Error(), nil)
+	}
+	actor, ip := auditActor(ctx)
+	auditlog.Log(ip, actor, "batch edit client classifications", "info")
+	return nil, nil
 }
 
 func adminEditClient(ctx context.Context, req *rpc.JsonRpcRequest) (any, *rpc.JsonRpcError) {

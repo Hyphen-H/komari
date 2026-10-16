@@ -83,4 +83,33 @@ func TestV2BasicInfoFillsRegionFromGeoIP(t *testing.T) {
 	if got.Region != want {
 		t.Fatalf("expected GeoIP region to be saved, got %q", got.Region)
 	}
+
+	// Administrator choices, including an explicitly empty region, survive all
+	// Agent reports; switching back to auto permits the next GeoIP update.
+	for _, manual := range []string{"🇯🇵", ""} {
+		if err := db.Model(&models.Client{}).Where("uuid = ?", clientUUID).Updates(map[string]interface{}{"region": manual, "region_manual": true}).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := saveClientBasicInfo(map[string]interface{}{"ipv4": "8.8.8.8", "region_manual": false, "tags": "injected", "group": "injected"}, clientUUID, ""); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.First(&got, "uuid = ?", clientUUID).Error; err != nil {
+			t.Fatal(err)
+		}
+		if got.Region != manual || !got.RegionManual || got.Tags != "" || got.Group != "" {
+			t.Fatalf("manual classification overwritten: %+v", got)
+		}
+	}
+	if err := db.Model(&models.Client{}).Where("uuid = ?", clientUUID).Update("region_manual", false).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := saveClientBasicInfo(map[string]interface{}{"ipv4": "8.8.8.8"}, clientUUID, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&got, "uuid = ?", clientUUID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if got.Region != want {
+		t.Fatalf("automatic GeoIP not restored: %s", got.Region)
+	}
 }
