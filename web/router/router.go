@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	agent_runtime "github.com/komari-monitor/komari/web/agent"
 	"github.com/komari-monitor/komari/web/api"
 	"github.com/komari-monitor/komari/web/api/admin"
 	"github.com/komari-monitor/komari/web/api/client"
@@ -70,6 +71,7 @@ func registerPublicRoutes(r *gin.Engine) {
 func registerAgentRoutes(r *gin.Engine) {
 	// AutoDiscovery 注册使用独立的 Authorization key 鉴权，保留 REST handler。
 	r.POST("/api/clients/register", client.RegisterClient)
+	r.POST("/api/clients/upgrade-progress/:id", agent_runtime.UpgradeProgressCallback)
 
 	tokenAuthorized := r.Group("/api/clients", api.RequireRole(api.RoleAdmin, api.RoleClient))
 	{

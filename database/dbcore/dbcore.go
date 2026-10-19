@@ -461,6 +461,8 @@ func doInitialize() error {
 		&models.User{},
 		&models.Client{},
 		&models.AgentTrafficConfig{},
+		&models.AgentUpgradeJob{},
+		&models.AgentUpgradeEvent{},
 		&models.Log{},
 		&models.OfflineNotification{},
 		&models.PingTask{},

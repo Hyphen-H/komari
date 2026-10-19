@@ -2,6 +2,7 @@ package jsonrpc
 
 import (
 	"context"
+	"net/url"
 	"strings"
 	"time"
 
@@ -33,7 +34,29 @@ func adminGetAgentUpgradeStatus(_ context.Context, req *rpc.JsonRpcRequest) (any
 	}
 	traffic, _ := clients.GetAgentTrafficConfig(p.UUID)
 	supported := traffic != nil && traffic.SeenAt != nil && time.Since(*traffic.SeenAt) < time.Minute
-	return map[string]any{"version": client.Version, "online": agent.IsAgentOnline(p.UUID), "traffic_supported": supported, "managed_version": agent.ManagedAgentVersion, "managed_release": agent.ManagedAgentRelease, "repository": "Hyphen-H/komari-agent"}, nil
+	response := map[string]any{"version": client.Version, "online": agent.IsAgentOnline(p.UUID), "traffic_supported": supported, "managed_version": agent.ManagedAgentVersion, "managed_release": agent.ManagedAgentRelease, "repository": "Hyphen-H/komari-agent"}
+	if job, err := agent.LatestUpgradeProgress(p.UUID); err == nil {
+		if job.Stage == "service_active" && client.Version == agent.ManagedAgentVersion && supported && traffic.SeenAt.After(job.CreatedAt) {
+			agent.MarkUpgradeStage(job.ID, "confirmed")
+			job.Stage = "confirmed"
+		}
+		if result, err := tasks.GetSpecificTaskResult(job.ID, p.UUID); err == nil && result.ExitCode != nil && *result.ExitCode != 0 && job.Stage != "confirmed" && job.Stage != "rolled_back" {
+			agent.MarkUpgradeStage(job.ID, "failed")
+			job.Stage = "failed"
+		}
+		response["upgrade_job"] = job
+		response["stage_label"] = agent.UpgradeStageLabels[job.Stage]
+		response["upgrade_events"] = agent.UpgradeEvents(job.ID)
+		if result, err := tasks.GetSpecificTaskResult(job.ID, p.UUID); err == nil && result.ExitCode != nil {
+			output := result.Result
+			if len(output) > 2000 {
+				output = output[:2000]
+			}
+			response["task_output"] = output
+			response["task_exit_code"] = *result.ExitCode
+		}
+	}
+	return response, nil
 }
 
 func adminUpgradeManagedAgent(ctx context.Context, req *rpc.JsonRpcRequest) (any, *rpc.JsonRpcError) {
@@ -46,6 +69,9 @@ func adminUpgradeManagedAgent(ctx context.Context, req *rpc.JsonRpcRequest) (any
 	}
 	if !agent.IsAgentOnline(p.UUID) {
 		return nil, rpc.MakeError(rpc.Unavailable, "Agent 离线，未发送升级命令", nil)
+	}
+	if previous, err := agent.LatestUpgradeProgress(p.UUID); err == nil && time.Since(previous.CreatedAt) < 5*time.Minute && previous.Stage != "confirmed" && previous.Stage != "failed" && previous.Stage != "rolled_back" {
+		return nil, rpc.MakeError(rpc.InvalidParams, "此节点已有升级进行中，请查看升级控制台，不要重复发送", nil)
 	}
 	config, err := agent.GetStartupConfig(ctx, p.UUID)
 	if err != nil {
@@ -66,12 +92,25 @@ func adminUpgradeManagedAgent(ctx context.Context, req *rpc.JsonRpcRequest) (any
 	if arch != "amd64" && arch != "arm64" && arch != "x86_64" && arch != "aarch64" {
 		return nil, rpc.MakeError(rpc.InvalidParams, "定制升级仅支持 Linux amd64/arm64 systemd 服务", nil)
 	}
-	command := agent.ManagedAgentUpgradeCommand()
 	id := uuid.NewString()
-	if err = tasks.CreateTask(id, []string{p.UUID}, command); err != nil {
+	endpoint, _ := config["endpoint"].(string)
+	parsed, parseErr := url.Parse(endpoint)
+	if parseErr != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.Host == "" || parsed.User != nil {
+		return nil, rpc.MakeError(rpc.InvalidParams, "Agent 面板地址无效，无法接收升级进度", nil)
+	}
+	callback := strings.TrimRight(endpoint, "/") + "/api/clients/upgrade-progress/" + id
+	progressToken, err := agent.NewUpgradeProgress(id, p.UUID)
+	if err != nil {
+		return nil, rpc.MakeError(rpc.InternalError, "failed to create progress job", nil)
+	}
+	command := agent.ManagedAgentUpgradeCommandWithProgress(callback, progressToken)
+	// Persist the auditable template, not the short-lived callback capability.
+	if err = tasks.CreateTask(id, []string{p.UUID}, agent.ManagedAgentUpgradeCommand()); err != nil {
+		agent.MarkUpgradeStage(id, "failed")
 		return nil, rpc.MakeError(rpc.InternalError, "failed to create upgrade task", nil)
 	}
 	if !agent.DispatchV2Event(p.UUID, v2.MethodAgentExec, v2.ExecParams{TaskID: id, Command: command}) {
+		agent.MarkUpgradeStage(id, "failed")
 		tasks.SaveTaskResult(id, p.UUID, "Agent disconnected before dispatch", -1, time.Now().UTC())
 		return nil, rpc.MakeError(rpc.Unavailable, "Agent 已断开，未发送升级", nil)
 	}
