@@ -12,7 +12,9 @@ func TestManualUpgradeCommand(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, want := range []string{"sha256sum -c", "systemctl show", "MainPID", "old-agent", "auto-discovery.json", "net_static.json", "managed-traffic.json", "ROLLBACK", ManagedAgentRelease, "[6/6]"} {
+		for _, want := range []string{"sha256sum -c", "systemctl show", "MainPID", "old-agent", "auto-discovery.json", "net_static.json", "managed-traffic.json", "ROLLBACK", ManagedAgentRelease, "[6/6]",
+			// 防止在 Agent 自己的终端/执行上下文里运行：停止 Agent 会因此杀掉脚本。
+			"ControlGroup", "拒绝执行", "manual-upgrade.log", "trap '' PIPE", "trap 'exit 129' HUP", "rmdir '$lock'"} {
 			if !strings.Contains(command, want) {
 				t.Fatalf("missing %s", want)
 			}
