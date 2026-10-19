@@ -177,6 +177,8 @@ func registerAdminRoutes(r *gin.Engine) {
 		clientGroup.GET("/:uuid/token", jsonRpc.Bind("admin:getClientToken", jsonRpc.WithPath("uuid"), jsonRpc.WithFlat()))
 		clientGroup.POST("/order", jsonRpc.Bind("admin:orderClients"))
 		clientGroup.POST("/classifications/edit", jsonRpc.Bind("admin:editClientClassifications"))
+		clientGroup.GET("/:uuid/traffic-config", jsonRpc.Bind("admin:getAgentTrafficConfig", jsonRpc.WithPath("uuid"), jsonRpc.WithRaw()))
+		clientGroup.POST("/:uuid/traffic-config", jsonRpc.Bind("admin:setAgentTrafficConfig", jsonRpc.WithPath("uuid"), jsonRpc.WithRaw()))
 		// RequestTerminal validates 2FA only when creating a new session. Reattach
 		// requests are authenticated against the existing session owner so a short
 		// network flap does not depend on the current TOTP window.

@@ -49,6 +49,16 @@ func handleV2RPC(uuid string, req v2.Request, allowWait bool) v2.Response {
 		return v2.Error(req.ID, -32600, "invalid jsonrpc version", nil)
 	}
 	switch req.Method {
+	case v2.MethodAgentTrafficConfigSync:
+		var params clients.TrafficReport
+		if err := bindV2Params(req.Params, &params); err != nil {
+			return v2.Error(req.ID, -32602, "invalid traffic configuration report", nil)
+		}
+		config, err := clients.SyncAgentTrafficConfig(uuid, params)
+		if err != nil {
+			return v2.Error(req.ID, -32000, "failed to sync traffic configuration", nil)
+		}
+		return v2.Success(req.ID, config)
 	case v2.MethodAgentReport:
 		var params v2.ReportParams
 		if err := bindV2Params(req.Params, &params); err != nil {
