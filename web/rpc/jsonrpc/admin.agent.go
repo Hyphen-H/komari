@@ -29,6 +29,7 @@ func init() {
 		Example: map[string]any{"uuid": "agent-uuid", "version": "1.2.*"},
 	})
 	rpc.MarkSensitive("admin:getAgentStartupConfig")
+	rpc.MarkSensitive("admin:switchAgentVersion")
 }
 
 func adminGetAgentStartupConfig(ctx context.Context, req *rpc.JsonRpcRequest) (any, *rpc.JsonRpcError) {
@@ -53,7 +54,7 @@ func adminGetAgentStartupConfig(ctx context.Context, req *rpc.JsonRpcRequest) (a
 	}
 }
 
-func adminSwitchAgentVersion(_ context.Context, req *rpc.JsonRpcRequest) (any, *rpc.JsonRpcError) {
+func adminSwitchAgentVersion(ctx context.Context, req *rpc.JsonRpcRequest) (any, *rpc.JsonRpcError) {
 	var params struct {
 		UUID    string `json:"uuid"`
 		Version string `json:"version"`
@@ -63,6 +64,13 @@ func adminSwitchAgentVersion(_ context.Context, req *rpc.JsonRpcRequest) (any, *
 	}
 	if strings.TrimSpace(params.UUID) == "" || strings.TrimSpace(params.Version) == "" {
 		return nil, rpc.MakeError(rpc.InvalidParams, "uuid and version are required", nil)
+	}
+	config, err := agent_runtime.GetStartupConfig(ctx, params.UUID)
+	if err != nil {
+		return nil, rpc.MakeError(rpc.Unavailable, "无法读取 Agent 配置，未发送切换命令", nil)
+	}
+	if err = agent_runtime.ValidateManagedAgentConfig(config); err != nil {
+		return nil, rpc.MakeError(rpc.InvalidParams, err.Error(), nil)
 	}
 	if err := agent_runtime.SwitchAgentVersion(params.UUID, params.Version); err != nil {
 		switch {
