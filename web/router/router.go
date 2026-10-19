@@ -182,6 +182,7 @@ func registerAdminRoutes(r *gin.Engine) {
 		clientGroup.GET("/:uuid/traffic-config", jsonRpc.Bind("admin:getAgentTrafficConfig", jsonRpc.WithPath("uuid"), jsonRpc.WithRaw()))
 		clientGroup.POST("/:uuid/traffic-config", jsonRpc.Bind("admin:setAgentTrafficConfig", jsonRpc.WithPath("uuid"), jsonRpc.WithRaw()))
 		clientGroup.GET("/:uuid/upgrade-status", jsonRpc.Bind("admin:getAgentUpgradeStatus", jsonRpc.WithPath("uuid"), jsonRpc.WithRaw()))
+		clientGroup.GET("/:uuid/replacement-command", jsonRpc.Bind("admin:getAgentReplacementCommand", jsonRpc.WithPath("uuid"), jsonRpc.WithQuery("service"), jsonRpc.WithRaw()))
 		clientGroup.POST("/:uuid/upgrade-managed", jsonRpc.Bind("admin:upgradeManagedAgent", jsonRpc.WithPath("uuid"), jsonRpc.WithRaw()))
 		clientGroup.POST("/:uuid/switch-version", jsonRpc.Bind("admin:switchAgentVersion", jsonRpc.WithPath("uuid"), jsonRpc.WithRaw()))
 		// RequestTerminal validates 2FA only when creating a new session. Reattach

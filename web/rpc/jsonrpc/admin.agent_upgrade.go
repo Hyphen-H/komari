@@ -16,9 +16,28 @@ import (
 )
 
 func init() {
+	RegisterWithGroupAndMeta("getAgentReplacementCommand", rpc.RoleAdmin, adminGetAgentReplacementCommand, &rpc.MethodMeta{Name: "admin:getAgentReplacementCommand", Summary: "Generate a credential-free SSH replacement command; never execute remotely"})
 	RegisterWithGroupAndMeta("getAgentUpgradeStatus", rpc.RoleAdmin, adminGetAgentUpgradeStatus, &rpc.MethodMeta{Name: "admin:getAgentUpgradeStatus", Summary: "Get version and remote traffic capability without credentials"})
 	RegisterWithGroupAndMeta("upgradeManagedAgent", rpc.RoleAdmin, adminUpgradeManagedAgent, &rpc.MethodMeta{Name: "admin:upgradeManagedAgent", Summary: "Send a verified fixed-release upgrade command to one online Agent"})
 	rpc.MarkSensitive("admin:upgradeManagedAgent")
+}
+
+func adminGetAgentReplacementCommand(_ context.Context, req *rpc.JsonRpcRequest) (any, *rpc.JsonRpcError) {
+	var p struct {
+		UUID    string `json:"uuid"`
+		Service string `json:"service"`
+	}
+	if req.BindParams(&p) != nil || p.UUID == "" {
+		return nil, rpc.MakeError(rpc.InvalidParams, "uuid is required", nil)
+	}
+	if _, err := clients.GetClientByUUID(p.UUID); err != nil {
+		return nil, rpc.MakeError(rpc.NotFound, "node not found", nil)
+	}
+	command, err := agent.ManualAgentUpgradeCommand(p.Service)
+	if err != nil {
+		return nil, rpc.MakeError(rpc.InvalidParams, "服务名仅支持字母、数字和 . _ @ -", nil)
+	}
+	return map[string]any{"command": command, "version": agent.ManagedAgentVersion, "repository": "Hyphen-H/komari-agent", "release": "https://github.com/Hyphen-H/komari-agent/releases/tag/" + agent.ManagedAgentRelease}, nil
 }
 
 func adminGetAgentUpgradeStatus(_ context.Context, req *rpc.JsonRpcRequest) (any, *rpc.JsonRpcError) {
